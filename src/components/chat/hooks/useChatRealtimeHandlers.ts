@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { PendingPermissionRequest } from '../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 import type { SessionStore, NormalizedMessage } from '../../../stores/useSessionStore';
+import { authenticatedFetch } from '../../../utils/api';
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -263,6 +264,15 @@ export function useChatRealtimeHandlers({
         onSessionInactive?.(sid);
         onSessionNotProcessing?.(sid);
 
+        // Fetch accurate token usage from REST API to correct any WebSocket estimate
+        if (provider === 'claude' && (sid || currentSessionId) && selectedProject?.name) {
+          const sessionIdToUse = sid || currentSessionId;
+          authenticatedFetch(`/api/projects/${encodeURIComponent(selectedProject.name)}/sessions/${encodeURIComponent(sessionIdToUse!)}/token-usage`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => { if (data) setTokenBudget(data as Record<string, unknown>); })
+            .catch(() => {});
+        }
+
         // Handle aborted case
         if (msg.aborted) {
           // Abort was requested — the complete event confirms it
@@ -323,9 +333,7 @@ export function useChatRealtimeHandlers({
       }
 
       case 'status': {
-        if (msg.text === 'token_budget' && msg.tokenBudget) {
-          setTokenBudget(msg.tokenBudget as Record<string, unknown>);
-        } else if (msg.text) {
+        if (msg.text && msg.text !== 'token_budget') {
           setClaudeStatus({
             text: msg.text,
             tokens: msg.tokens || 0,

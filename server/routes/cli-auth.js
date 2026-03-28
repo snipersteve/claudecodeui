@@ -1,5 +1,5 @@
 import express from 'express';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -187,19 +187,128 @@ async function checkClaudeCredentials() {
       }
     }
 
-    return {
-      authenticated: false,
-      email: null,
-      method: null
-    };
+    // token expired, fall through to Keychain check
   } catch (error) {
-    return {
-      authenticated: false,
-      email: null,
-      method: null
-    };
+    // credentials.json not found or invalid, fall through to Keychain check
   }
+
+  // Priority 3: Check macOS Keychain for OAuth tokens
+  // Claude Code 2.x stores credentials in macOS Keychain by default
+  // (service: "Claude Code-credentials") instead of .credentials.json
+  if (process.platform === 'darwin') {
+    try {
+      const keychainData = execSync(
+        'security find-generic-password -s "Claude Code-credentials" -w',
+        { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).trim();
+
+      if (keychainData) {
+        const creds = JSON.parse(keychainData);
+        const oauth = creds.claudeAiOauth || creds;
+        if (oauth && oauth.accessToken) {
+          const isExpired = oauth.expiresAt && Date.now() >= oauth.expiresAt;
+
+          if (!isExpired) {
+            return {
+              authenticated: true,
+              email: creds.email || `${oauth.subscriptionType || 'claude.ai'} (Keychain)`,
+              method: 'keychain'
+            };
+          }
+        }
+      }
+    } catch (keychainError) {
+      // Keychain access failed or not on macOS
+    }
+  }
+
+  return {
+    authenticated: false,
+    email: null,
+    method: null
+  };
 }
+
+// In-memory cache for rate limit data (60s TTL)
+let usageCache = null;
+let usageCacheTime = 0;
+const USAGE_CACHE_TTL = 300 * 1000;
+
+async function getClaudeOAuthToken() {
+  // Check env var first
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return process.env.CLAUDE_CODE_OAUTH_TOKEN;
+
+  // Check ~/.claude/.credentials.json
+  try {
+    const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
+    const content = await fs.readFile(credPath, 'utf8');
+    const creds = JSON.parse(content);
+    const oauth = creds.claudeAiOauth;
+    if (oauth?.accessToken && !(oauth.expiresAt && Date.now() >= oauth.expiresAt)) {
+      return oauth.accessToken;
+    }
+  } catch (_) {
+    // fall through
+  }
+
+  // Check macOS Keychain
+  if (process.platform === 'darwin') {
+    try {
+      const blob = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+        encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      if (blob) {
+        const creds = JSON.parse(blob);
+        const oauth = creds.claudeAiOauth || creds;
+        if (oauth?.accessToken && !(oauth.expiresAt && Date.now() >= oauth.expiresAt)) {
+          return oauth.accessToken;
+        }
+      }
+    } catch (_) {
+      // Keychain not available
+    }
+  }
+
+  return null;
+}
+
+router.get('/claude/usage', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (usageCache && now - usageCacheTime < USAGE_CACHE_TTL) {
+      return res.json(usageCache);
+    }
+
+    const token = await getClaudeOAuthToken();
+    if (!token) {
+      return res.status(404).json({ error: 'No OAuth token — usage data only available for claude.ai subscribers' });
+    }
+
+    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'User-Agent': 'claudecodeui/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      if (usageCache) return res.json(usageCache);
+      return res.status(response.status).json({ error: `Anthropic API error: ${response.status}` });
+    }
+
+    const data = await response.json();
+    usageCache = data;
+    usageCacheTime = now;
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching Claude usage:', error);
+    if (usageCache) return res.json(usageCache);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 function checkCursorStatus() {
   return new Promise((resolve) => {

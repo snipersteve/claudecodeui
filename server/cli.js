@@ -246,9 +246,6 @@ async function updatePackage() {
 
 // Start the server
 async function startServer() {
-    // Check for updates silently on startup
-    checkForUpdates(true);
-
     // Import and run the server
     await import('./index.js');
 }
@@ -314,7 +311,7 @@ async function main() {
             showVersion();
             break;
         case 'update':
-            await updatePackage();
+            console.log('Update disabled — this is a source-managed installation.');
             break;
         default:
             console.error(`\n❌ Unknown command: ${command}`);

@@ -52,17 +52,17 @@ function ThinkingModeSelector({ selectedMode, onModeChange, onClose, className =
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 sm:h-10 sm:w-10 ${selectedMode === 'none'
+        className={`flex h-7 w-7 items-center justify-center rounded-full transition-all duration-200 sm:h-8 sm:w-8 ${selectedMode === 'none'
             ? 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600'
             : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800'
           }`}
         title={t('thinkingMode.buttonTitle', { mode: currentMode.name })}
       >
-        <IconComponent className={`h-5 w-5 ${currentMode.color}`} />
+        <IconComponent className={`h-3.5 w-3.5 ${currentMode.color}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+        <div className="fixed bottom-24 left-3 right-3 z-[60] w-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:z-auto sm:mb-2 sm:w-64 dark:border-gray-700 dark:bg-gray-800">
           <div className="border-b border-gray-200 p-3 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">

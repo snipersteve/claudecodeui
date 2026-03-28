@@ -1,10 +1,14 @@
-import { type ReactNode } from 'react';
-import { Folder, MessageSquare, Search } from 'lucide-react';
+import { type ReactNode, useMemo } from 'react';
+import { Clock, Folder, MessageSquare, Search } from 'lucide-react';
 import type { TFunction } from 'i18next';
+import { cn } from '../../../../lib/utils';
 import { ScrollArea } from '../../../../shared/view/ui';
 import type { Project } from '../../../../types/app';
 import type { ReleaseInfo } from '../../../../types/sharedTypes';
 import type { ConversationSearchResults, SearchProgress } from '../../hooks/useSidebarController';
+import { getSessionDate, createSessionViewModel } from '../../utils/utils';
+import { formatTimeAgo } from '../../../../utils/dateUtils';
+import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
 import SidebarFooter from './SidebarFooter';
 import SidebarHeader from './SidebarHeader';
 import SidebarProjectList, { type SidebarProjectListProps } from './SidebarProjectList';
@@ -90,6 +94,22 @@ export default function SidebarContent({
 }: SidebarContentProps) {
   const showConversationSearch = searchMode === 'conversations' && searchFilter.trim().length >= 2;
   const hasPartialResults = conversationResults && conversationResults.results.length > 0;
+
+  // Flat reverse-chronological session list for conversations mode
+  const flatSessionList = useMemo(() => {
+    if (searchMode !== 'conversations') return [];
+    const all = projects.flatMap(project =>
+      projectListProps.getProjectSessions(project).map(session => ({ session, project }))
+    );
+    all.sort((a, b) => getSessionDate(b.session).getTime() - getSessionDate(a.session).getTime());
+    const q = searchFilter.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(({ session, project: p }) => {
+      const name = (session.summary || session.name || '').toLowerCase();
+      const proj = (p.displayName || p.name).toLowerCase();
+      return name.includes(q) || proj.includes(q);
+    });
+  }, [searchMode, projects, projectListProps.getProjectSessions, searchFilter]);
 
   return (
     <div
@@ -208,6 +228,51 @@ export default function SidebarContent({
               ))}
             </div>
           ) : null
+        ) : searchMode === 'conversations' ? (
+          flatSessionList.length === 0 ? (
+            <div className="px-4 py-12 text-center md:py-8">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted md:mb-3">
+                <MessageSquare className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">{t('projects.noSessions', { defaultValue: 'No conversations yet' })}</p>
+            </div>
+          ) : (
+            <div className="space-y-0.5 px-1.5 py-2">
+              {flatSessionList.map(({ session, project }) => {
+                const sessionView = createSessionViewModel(session, projectListProps.currentTime, t);
+                const isSelected = projectListProps.selectedSession?.id === session.id;
+                return (
+                  <button
+                    key={`${project.name}-${session.id}`}
+                    className={cn(
+                      'group relative w-full rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-accent/50',
+                      isSelected && 'bg-accent text-accent-foreground',
+                    )}
+                    onClick={() => projectListProps.onSessionSelect(session, project.name)}
+                  >
+                    {sessionView.isActive && (
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2">
+                        <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                      </span>
+                    )}
+                    <div className="flex items-start gap-2">
+                      <SessionProviderLogo provider={session.__provider} className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-medium text-foreground">{sessionView.sessionName}</div>
+                        <div className="mt-0.5 flex items-center gap-1">
+                          <Folder className="h-2.5 w-2.5 flex-shrink-0 text-muted-foreground/50" />
+                          <span className="truncate text-[10px] text-muted-foreground/70">{project.displayName || project.name}</span>
+                          <span className="text-[10px] text-muted-foreground/40">·</span>
+                          <Clock className="h-2.5 w-2.5 flex-shrink-0 text-muted-foreground/50" />
+                          <span className="text-[10px] text-muted-foreground/70">{formatTimeAgo(sessionView.sessionTime, projectListProps.currentTime, t)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )
         ) : (
           <SidebarProjectList {...projectListProps} />
         )}

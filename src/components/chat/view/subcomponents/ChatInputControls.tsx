@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import type { PermissionMode, Provider } from '../../types/types';
 import ThinkingModeSelector from './ThinkingModeSelector';
 import TokenUsagePie from './TokenUsagePie';
+import RateLimitBadge from './RateLimitBadge';
+import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../../shared/modelConstants';
 
 interface ChatInputControlsProps {
   permissionMode: PermissionMode | string;
@@ -79,29 +81,22 @@ export default function ChatInputControls({
       )}
 
       <TokenUsagePie used={tokenBudget?.used || 0} total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000} />
+      {provider === 'claude' && <RateLimitBadge />}
 
-      <button
-        type="button"
-        onClick={onToggleCommandMenu}
-        className="relative flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground sm:h-8 sm:w-8"
-        title={t('input.showAllCommands')}
-      >
-        <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
-          />
-        </svg>
-        {slashCommandsCount > 0 && (
-          <span
-            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground sm:h-5 sm:w-5"
-          >
-            {slashCommandsCount}
+      {(() => {
+        const keyMap: Record<string, string> = { claude: 'claude-model', cursor: 'cursor-model', codex: 'codex-model', gemini: 'gemini-model' };
+        const defaultMap: Record<string, string> = { claude: CLAUDE_MODELS.DEFAULT, cursor: CURSOR_MODELS.DEFAULT, codex: CODEX_MODELS.DEFAULT, gemini: GEMINI_MODELS.DEFAULT };
+        const allOptions = [...CLAUDE_MODELS.OPTIONS, ...CURSOR_MODELS.OPTIONS, ...CODEX_MODELS.OPTIONS, ...GEMINI_MODELS.OPTIONS];
+        const key = keyMap[provider];
+        if (!key) return null;
+        const value = localStorage.getItem(key) || defaultMap[provider];
+        const label = allOptions.find((o) => o.value === value)?.label || value;
+        return (
+          <span className="rounded-md border border-border/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
+            {label}
           </span>
-        )}
-      </button>
+        );
+      })()}
 
       {hasInput && (
         <button
