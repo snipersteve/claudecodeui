@@ -1,6 +1,7 @@
 import express from 'express';
 import { spawn, execSync } from 'child_process';
 import fs from 'fs/promises';
+import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
 
@@ -229,10 +230,40 @@ async function checkClaudeCredentials() {
   };
 }
 
-// In-memory cache for rate limit data (60s TTL)
+// In-memory + disk cache for rate limit data (5min TTL)
 let usageCache = null;
 let usageCacheTime = 0;
 const USAGE_CACHE_TTL = 300 * 1000;
+const USAGE_CACHE_FILE = path.join(os.homedir(), '.claude', '.usage-cache.json');
+
+// Resolve Claude Code version once at startup (needed for User-Agent)
+let ccVersion = '2.1.0';
+try {
+  ccVersion = execSync('claude --version 2>/dev/null', { encoding: 'utf8', timeout: 3000 }).trim().split(' ')[0] || '2.1.0';
+} catch (_) {
+  // fallback
+}
+
+// Load disk cache on startup
+try {
+  const diskCache = JSON.parse(readFileSync(USAGE_CACHE_FILE, 'utf8'));
+  if (diskCache?.data && diskCache?.time) {
+    usageCache = diskCache.data;
+    usageCacheTime = diskCache.time;
+  }
+} catch (_) {
+  // no disk cache yet
+}
+
+function persistUsageCache(data, time) {
+  usageCache = data;
+  usageCacheTime = time;
+  try {
+    writeFileSync(USAGE_CACHE_FILE, JSON.stringify({ data, time }), 'utf8');
+  } catch (_) {
+    // ignore write errors
+  }
+}
 
 async function getClaudeOAuthToken() {
   // Check env var first
@@ -281,31 +312,44 @@ router.get('/claude/usage', async (req, res) => {
 
     const token = await getClaudeOAuthToken();
     if (!token) {
+      console.warn('[usage] No OAuth token found. Sources checked: env, credentials.json, keychain');
+      if (usageCache) {
+        console.log('[usage] Returning stale cache (no token)');
+        return res.json(usageCache);
+      }
       return res.status(404).json({ error: 'No OAuth token — usage data only available for claude.ai subscribers' });
     }
 
+    // User-Agent must match Claude Code's format; Anthropic API rejects unknown agents with 429
     const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
       headers: {
-        'Accept': 'application/json',
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
         'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': 'claudecodeui/1.0',
+        'User-Agent': `claude-code/${ccVersion}`,
       },
     });
 
     if (!response.ok) {
-      if (usageCache) return res.json(usageCache);
+      const body = await response.text().catch(() => '');
+      console.warn(`[usage] Anthropic API returned ${response.status}: ${body}`);
+      if (usageCache) {
+        console.log(`[usage] Returning stale cache (API ${response.status}), cache age: ${Math.round((now - usageCacheTime) / 1000)}s`);
+        return res.json(usageCache);
+      }
+      console.warn('[usage] No cache available, returning error to client');
       return res.status(response.status).json({ error: `Anthropic API error: ${response.status}` });
     }
 
     const data = await response.json();
-    usageCache = data;
-    usageCacheTime = now;
+    persistUsageCache(data, now);
     res.json(data);
   } catch (error) {
-    console.error('Error fetching Claude usage:', error);
-    if (usageCache) return res.json(usageCache);
+    console.error('[usage] Error fetching Claude usage:', error.message);
+    if (usageCache) {
+      console.log('[usage] Returning stale cache (exception)');
+      return res.json(usageCache);
+    }
     res.status(500).json({ error: error.message });
   }
 });

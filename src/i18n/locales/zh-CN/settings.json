@@ -139,6 +139,12 @@
       "alphabetical": "按字母顺序",
       "recentActivity": "最近活动"
     },
+    "projectScanPaths": {
+      "label": "项目扫描路径",
+      "description": "仅显示这些目录下的项目。留空则显示所有项目。",
+      "placeholder": "/Users/username/Documents/git",
+      "add": "添加"
+    },
     "codeEditor": {
       "title": "代码编辑器",
       "theme": {

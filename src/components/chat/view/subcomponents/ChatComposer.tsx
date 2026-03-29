@@ -14,10 +14,8 @@ import type {
 import MicButton from '../../../mic-button/view/MicButton';
 import type { PendingPermissionRequest, PermissionMode, Provider } from '../../types/types';
 import CommandMenu from './CommandMenu';
-import ClaudeStatus from './ClaudeStatus';
 import ImageAttachment from './ImageAttachment';
 import PermissionRequestsBanner from './PermissionRequestsBanner';
-import ChatInputControls from './ChatInputControls';
 
 interface MentionableFile {
   name: string;
@@ -170,17 +168,6 @@ export default function ChatComposer({
 
   return (
     <div className={`flex-shrink-0 p-2 pb-2 sm:p-4 sm:pb-4 md:p-4 md:pb-6 ${mobileFloatingClass}`}>
-      {!hasQuestionPanel && (
-        <div className="flex-1">
-          <ClaudeStatus
-            status={claudeStatus}
-            isLoading={isLoading}
-            onAbort={onAbortSession}
-            provider={provider}
-          />
-        </div>
-      )}
-
       <div className="mx-auto mb-3 max-w-4xl">
         <PermissionRequestsBanner
           pendingPermissionRequests={pendingPermissionRequests}
@@ -188,24 +175,9 @@ export default function ChatComposer({
           handleGrantToolPermission={handleGrantToolPermission}
         />
 
-        {!hasQuestionPanel && <ChatInputControls
-          permissionMode={permissionMode}
-          onModeSwitch={onModeSwitch}
-          provider={provider}
-          thinkingMode={thinkingMode}
-          setThinkingMode={setThinkingMode}
-          tokenBudget={tokenBudget}
-          slashCommandsCount={slashCommandsCount}
-          onToggleCommandMenu={onToggleCommandMenu}
-          hasInput={hasInput}
-          onClearInput={onClearInput}
-          isUserScrolledUp={isUserScrolledUp}
-          hasMessages={hasMessages}
-          onScrollToBottom={onScrollToBottom}
-        />}
       </div>
 
-      {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative mx-auto max-w-4xl">
+      {!hasQuestionPanel ? <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative mx-auto max-w-4xl">
         {isDragActive && (
           <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/15">
             <div className="rounded-xl border border-border/30 bg-card p-4 shadow-lg">
@@ -352,7 +324,7 @@ export default function ChatComposer({
             </div>
           </div>
         </div>
-      </form>}
+      </form> : null}
     </div>
   );
 }

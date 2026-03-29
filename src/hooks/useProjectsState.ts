@@ -523,6 +523,7 @@ export function useProjectsState({
       settingsInitialTab,
       onCloseSettings: () => setShowSettings(false),
       isMobile,
+      sidebarOpen,
     }),
     [
       handleNewSession,
@@ -539,6 +540,7 @@ export function useProjectsState({
       selectedProject,
       selectedSession,
       showSettings,
+      sidebarOpen,
     ],
   );
 

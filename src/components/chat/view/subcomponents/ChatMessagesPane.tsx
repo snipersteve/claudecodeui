@@ -52,6 +52,7 @@ interface ChatMessagesPaneProps {
   showThinking?: boolean;
   selectedProject: Project;
   isLoading: boolean;
+  permissionMode?: string;
 }
 
 export default function ChatMessagesPane({
@@ -98,6 +99,7 @@ export default function ChatMessagesPane({
   showThinking,
   selectedProject,
   isLoading,
+  permissionMode,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const messageKeyMapRef = useRef<WeakMap<ChatMessage, string>>(new WeakMap());
@@ -256,6 +258,7 @@ export default function ChatMessagesPane({
                 showThinking={showThinking}
                 selectedProject={selectedProject}
                 provider={provider}
+                permissionMode={permissionMode}
               />
             );
           })}

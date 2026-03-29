@@ -44,7 +44,7 @@ import pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
-import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
+import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations, getProjectScanPaths, saveProjectScanPaths } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
@@ -228,6 +228,16 @@ const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
 const ANSI_ESCAPE_SEQUENCE_REGEX = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
 const TRAILING_URL_PUNCTUATION_REGEX = /[)\]}>.,;:!?]+$/;
+
+function getContextWindowForModel(modelName) {
+    if (!modelName) return 200000;
+    const m = modelName.toLowerCase();
+    // Models with 1M context (identified by "[1m]" suffix or known 1M variants)
+    if (m.includes('[1m]') || m.includes('1m')) return 1000000;
+    // Claude opus/sonnet 4 family: 200k default
+    if (m.includes('opus') || m.includes('sonnet') || m.includes('haiku')) return 200000;
+    return 200000;
+}
 
 function stripAnsiSequences(value = '') {
     return value.replace(ANSI_ESCAPE_SEQUENCE_REGEX, '');
@@ -1427,29 +1437,61 @@ function handleChatConnection(ws, request) {
             const data = JSON.parse(message);
 
             if (data.type === 'claude-command') {
+                const sid = data.options?.sessionId;
                 console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🔄 Session:', sid ? 'Resume' : 'New');
+
+                // Prevent concurrent queries on the same session
+                if (sid && isClaudeSDKSessionActive(sid)) {
+                    console.warn(`[WARN] Session ${sid} is already active, rejecting concurrent request`);
+                    writer.send(createNormalizedMessage({ kind: 'error', error: 'Session is already processing a request. Please wait for it to complete or abort it first.', sessionId: sid, provider: 'claude' }));
+                    return;
+                }
 
                 // Use Claude Agents SDK
                 await queryClaudeSDK(data.command, data.options, writer);
             } else if (data.type === 'cursor-command') {
+                const sid = data.options?.sessionId;
                 console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.cwd || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🔄 Session:', sid ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                if (sid && isCursorSessionActive(sid)) {
+                    console.warn(`[WARN] Cursor session ${sid} is already active, rejecting concurrent request`);
+                    writer.send(createNormalizedMessage({ kind: 'error', error: 'Session is already processing a request. Please wait for it to complete or abort it first.', sessionId: sid, provider: 'cursor' }));
+                    return;
+                }
+
                 await spawnCursor(data.command, data.options, writer);
             } else if (data.type === 'codex-command') {
+                const sid = data.options?.sessionId;
                 console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🔄 Session:', sid ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                if (sid && isCodexSessionActive(sid)) {
+                    console.warn(`[WARN] Codex session ${sid} is already active, rejecting concurrent request`);
+                    writer.send(createNormalizedMessage({ kind: 'error', error: 'Session is already processing a request. Please wait for it to complete or abort it first.', sessionId: sid, provider: 'codex' }));
+                    return;
+                }
+
                 await queryCodex(data.command, data.options, writer);
             } else if (data.type === 'gemini-command') {
+                const sid = data.options?.sessionId;
                 console.log('[DEBUG] Gemini message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🔄 Session:', sid ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                if (sid && isGeminiSessionActive(sid)) {
+                    console.warn(`[WARN] Gemini session ${sid} is already active, rejecting concurrent request`);
+                    writer.send(createNormalizedMessage({ kind: 'error', error: 'Session is already processing a request. Please wait for it to complete or abort it first.', sessionId: sid, provider: 'gemini' }));
+                    return;
+                }
+
                 await spawnGemini(data.command, data.options, writer);
             } else if (data.type === 'cursor-resume') {
                 // Backward compatibility: treat as cursor-command with resume and no prompt
@@ -2294,11 +2336,10 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
         }
         const lines = fileContent.trim().split('\n');
 
-        const parsedContextWindow = parseInt(process.env.CONTEXT_WINDOW, 10);
-        const contextWindow = Number.isFinite(parsedContextWindow) ? parsedContextWindow : 160000;
         let inputTokens = 0;
         let cacheCreationTokens = 0;
         let cacheReadTokens = 0;
+        let sessionModel = null;
 
         // Find the latest assistant message with usage data (scan from end)
         for (let i = lines.length - 1; i >= 0; i--) {
@@ -2313,6 +2354,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
                     inputTokens = usage.input_tokens || 0;
                     cacheCreationTokens = usage.cache_creation_input_tokens || 0;
                     cacheReadTokens = usage.cache_read_input_tokens || 0;
+                    sessionModel = entry.message.model || null;
 
                     break; // Stop after finding the latest assistant message
                 }
@@ -2320,6 +2362,16 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
                 // Skip lines that can't be parsed
                 continue;
             }
+        }
+
+        // Determine context window from env, query model param, session model, or default
+        const parsedContextWindow = parseInt(process.env.CONTEXT_WINDOW, 10);
+        const queryModel = req.query.model; // Model selection from frontend (e.g. "opus[1m]")
+        let contextWindow;
+        if (Number.isFinite(parsedContextWindow)) {
+            contextWindow = parsedContextWindow;
+        } else {
+            contextWindow = getContextWindowForModel(queryModel || sessionModel);
         }
 
         // Calculate total context usage (excluding output_tokens, as per ccusage)

@@ -139,6 +139,12 @@
       "alphabetical": "Alphabetical",
       "recentActivity": "Recent Activity"
     },
+    "projectScanPaths": {
+      "label": "Project Scan Paths",
+      "description": "Only show projects under these directories. Leave empty to show all projects.",
+      "placeholder": "/Users/username/Documents/git",
+      "add": "Add"
+    },
     "codeEditor": {
       "title": "Code Editor",
       "theme": {

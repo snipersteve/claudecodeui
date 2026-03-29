@@ -70,6 +70,7 @@ interface UseChatRealtimeHandlersArgs {
   onNavigateToSession?: (sessionId: string) => void;
   onWebSocketReconnect?: () => void;
   sessionStore: SessionStore;
+  commandPendingRef: MutableRefObject<boolean>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -99,6 +100,7 @@ export function useChatRealtimeHandlers({
   onNavigateToSession,
   onWebSocketReconnect,
   sessionStore,
+  commandPendingRef,
 }: UseChatRealtimeHandlersArgs) {
   const lastProcessedMessageRef = useRef<LatestChatMessage | null>(null);
 
@@ -161,7 +163,7 @@ export function useChatRealtimeHandlers({
           }
           onSessionInactive?.(statusSessionId);
           onSessionNotProcessing?.(statusSessionId);
-          if (isCurrentSession) {
+          if (isCurrentSession && !commandPendingRef.current) {
             setIsLoading(false);
             setCanAbortSession(false);
             setClaudeStatus(null);
@@ -257,17 +259,22 @@ export function useChatRealtimeHandlers({
         accumulatedStreamRef.current = '';
         streamBufferRef.current = '';
 
-        setIsLoading(false);
-        setCanAbortSession(false);
-        setClaudeStatus(null);
-        setPendingPermissionRequests([]);
+        // Only clear UI loading state if this complete is for the active session
+        const isCompleteForActive = !msg.sessionId || msg.sessionId === activeViewSessionId;
+        if (isCompleteForActive) {
+          commandPendingRef.current = false;
+          setIsLoading(false);
+          setCanAbortSession(false);
+          setClaudeStatus(null);
+          setPendingPermissionRequests([]);
+        }
         onSessionInactive?.(sid);
         onSessionNotProcessing?.(sid);
 
         // Fetch accurate token usage from REST API to correct any WebSocket estimate
-        if (provider === 'claude' && (sid || currentSessionId) && selectedProject?.name) {
+        if (isCompleteForActive && provider === 'claude' && (sid || currentSessionId) && selectedProject?.name) {
           const sessionIdToUse = sid || currentSessionId;
-          authenticatedFetch(`/api/projects/${encodeURIComponent(selectedProject.name)}/sessions/${encodeURIComponent(sessionIdToUse!)}/token-usage`)
+          authenticatedFetch(`/api/projects/${encodeURIComponent(selectedProject.name)}/sessions/${encodeURIComponent(sessionIdToUse!)}/token-usage?model=${encodeURIComponent(localStorage.getItem('claude-model') || '')}`)
             .then((r) => r.ok ? r.json() : null)
             .then((data) => { if (data) setTokenBudget(data as Record<string, unknown>); })
             .catch(() => {});
@@ -298,9 +305,13 @@ export function useChatRealtimeHandlers({
       }
 
       case 'error': {
-        setIsLoading(false);
-        setCanAbortSession(false);
-        setClaudeStatus(null);
+        const isErrorForActive = !msg.sessionId || msg.sessionId === activeViewSessionId;
+        if (isErrorForActive) {
+          commandPendingRef.current = false;
+          setIsLoading(false);
+          setCanAbortSession(false);
+          setClaudeStatus(null);
+        }
         onSessionInactive?.(sid);
         onSessionNotProcessing?.(sid);
         break;
@@ -333,7 +344,9 @@ export function useChatRealtimeHandlers({
       }
 
       case 'status': {
-        if (msg.text && msg.text !== 'token_budget') {
+        // Only update UI loading state for the currently viewed session
+        const isForActiveSession = !msg.sessionId || msg.sessionId === activeViewSessionId;
+        if (isForActiveSession && msg.text && msg.text !== 'token_budget') {
           setClaudeStatus({
             text: msg.text,
             tokens: msg.tokens || 0,

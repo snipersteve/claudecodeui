@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Sidebar from '../sidebar/view/Sidebar';
@@ -7,7 +7,6 @@ import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useDeviceSettings } from '../../hooks/useDeviceSettings';
 import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
-import MobileNav from './MobileNav';
 
 export default function AppContent() {
   const navigate = useNavigate();
@@ -49,6 +48,35 @@ export default function AppContent() {
     isMobile,
     activeSessions,
   });
+
+  // Mobile: swipe right anywhere on screen to open sidebar
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    if (sidebarOpen) return;
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, [sidebarOpen]);
+
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
+    if (!touchStartRef.current || sidebarOpen) return;
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
+    touchStartRef.current = null;
+    // Require horizontal swipe: dx > 80px and mostly horizontal (angle < 30°)
+    if (dx > 80 && Math.abs(dy) < dx * 0.58) {
+      setSidebarOpen(true);
+    }
+  }, [sidebarOpen, setSidebarOpen]);
+
+  useEffect(() => {
+    if (!isMobile) return undefined;
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isMobile, handleTouchStart, handleTouchEnd]);
 
   useEffect(() => {
     // Expose a non-blocking refresh for chat/session flows.
@@ -132,7 +160,7 @@ export default function AppContent() {
         </div>
       ) : (
         <div
-          className={`fixed inset-0 z-50 flex transition-all duration-150 ease-out ${sidebarOpen ? 'visible opacity-100' : 'invisible opacity-0'
+          className={`fixed inset-0 z-[60] flex transition-all duration-150 ease-out ${sidebarOpen ? 'visible opacity-100' : 'invisible opacity-0'
             }`}
         >
           <button
@@ -159,7 +187,7 @@ export default function AppContent() {
         </div>
       )}
 
-      <div className={`flex min-w-0 flex-1 flex-col ${isMobile ? 'pb-mobile-nav' : ''}`}>
+      <div className="flex min-w-0 flex-1 flex-col">
         <MainContent
           selectedProject={selectedProject}
           selectedSession={selectedSession}
@@ -184,13 +212,6 @@ export default function AppContent() {
         />
       </div>
 
-      {isMobile && (
-        <MobileNav
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          isInputFocused={isInputFocused}
-        />
-      )}
 
     </div>
   );

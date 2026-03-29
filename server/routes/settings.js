@@ -2,6 +2,7 @@ import express from 'express';
 import { apiKeysDb, credentialsDb, notificationPreferencesDb, pushSubscriptionsDb } from '../database/db.js';
 import { getPublicKey } from '../services/vapid-keys.js';
 import { createNotificationEvent, notifyUserIfEnabled } from '../services/notification-orchestrator.js';
+import { getProjectScanPaths, saveProjectScanPaths } from '../projects.js';
 
 const router = express.Router();
 
@@ -270,6 +271,36 @@ router.post('/push/unsubscribe', async (req, res) => {
   } catch (error) {
     console.error('Error removing push subscription:', error);
     res.status(500).json({ error: 'Failed to remove push subscription' });
+  }
+});
+
+// ===============================
+// Project Scan Paths
+// ===============================
+
+router.get('/project-scan-paths', async (req, res) => {
+  try {
+    const paths = await getProjectScanPaths();
+    res.json({ paths });
+  } catch (error) {
+    console.error('Error fetching project scan paths:', error);
+    res.status(500).json({ error: 'Failed to fetch project scan paths' });
+  }
+});
+
+router.put('/project-scan-paths', async (req, res) => {
+  try {
+    const { paths } = req.body;
+    if (!Array.isArray(paths)) {
+      return res.status(400).json({ error: 'paths must be an array of strings' });
+    }
+    // Filter out empty strings and normalize
+    const cleanPaths = paths.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim());
+    await saveProjectScanPaths(cleanPaths);
+    res.json({ success: true, paths: cleanPaths });
+  } catch (error) {
+    console.error('Error saving project scan paths:', error);
+    res.status(500).json({ error: 'Failed to save project scan paths' });
   }
 });
 

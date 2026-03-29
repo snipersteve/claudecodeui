@@ -32,8 +32,10 @@ export function formatToolInputForDisplay(input: unknown) {
 export function getClaudePermissionSuggestion(
   message: ChatMessage | null | undefined,
   provider: string,
+  permissionMode?: string,
 ): ClaudePermissionSuggestion | null {
   if (provider !== 'claude') return null;
+  if (permissionMode === 'bypassPermissions') return null;
   if (!message?.toolResult?.isError) return null;
 
   const toolName = message?.toolName;

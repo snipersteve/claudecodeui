@@ -1,11 +1,14 @@
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DarkModeToggle } from '../../../../shared/view/ui';
+import { X, Plus } from 'lucide-react';
+import { DarkModeToggle, Button } from '../../../../shared/view/ui';
 import type { CodeEditorSettingsState, ProjectSortOrder } from '../../types/types';
 import LanguageSelector from '../../../../shared/view/ui/LanguageSelector';
 import SettingsCard from '../SettingsCard';
 import SettingsRow from '../SettingsRow';
 import SettingsSection from '../SettingsSection';
 import SettingsToggle from '../SettingsToggle';
+import { api } from '../../../../utils/api';
 
 type AppearanceSettingsTabProps = {
   projectSortOrder: ProjectSortOrder;
@@ -17,6 +20,121 @@ type AppearanceSettingsTabProps = {
   onCodeEditorLineNumbersChange: (value: boolean) => void;
   onCodeEditorFontSizeChange: (value: string) => void;
 };
+
+function ProjectScanPathsSection() {
+  const { t } = useTranslation('settings');
+  const [scanPaths, setScanPaths] = useState<string[]>([]);
+  const [newPath, setNewPath] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadScanPaths = useCallback(async () => {
+    try {
+      const response = await api.get('/settings/project-scan-paths');
+      if (response.ok) {
+        const data = await response.json();
+        setScanPaths(data.paths || []);
+      }
+    } catch (error) {
+      console.error('Error loading scan paths:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadScanPaths();
+  }, [loadScanPaths]);
+
+  const savePaths = useCallback(async (paths: string[]) => {
+    try {
+      const response = await api.put('/settings/project-scan-paths', { paths });
+      if (response.ok) {
+        const data = await response.json();
+        setScanPaths(data.paths || []);
+      }
+    } catch (error) {
+      console.error('Error saving scan paths:', error);
+    }
+  }, []);
+
+  const handleAdd = useCallback(() => {
+    const trimmed = newPath.trim();
+    if (!trimmed || scanPaths.includes(trimmed)) return;
+    const updated = [...scanPaths, trimmed];
+    setScanPaths(updated);
+    setNewPath('');
+    void savePaths(updated);
+  }, [newPath, scanPaths, savePaths]);
+
+  const handleRemove = useCallback((index: number) => {
+    const updated = scanPaths.filter((_, i) => i !== index);
+    setScanPaths(updated);
+    void savePaths(updated);
+  }, [scanPaths, savePaths]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAdd();
+    }
+  }, [handleAdd]);
+
+  if (isLoading) return null;
+
+  return (
+    <SettingsSection title={t('appearanceSettings.projectScanPaths.label', 'Project Scan Paths')}>
+      <SettingsCard>
+        <div className="px-4 py-4">
+          <div className="text-sm font-medium text-foreground">
+            {t('appearanceSettings.projectScanPaths.label', 'Project Scan Paths')}
+          </div>
+          <div className="mt-0.5 text-sm text-muted-foreground">
+            {t('appearanceSettings.projectScanPaths.description', 'Only show projects under these directories. Leave empty to show all projects.')}
+          </div>
+
+          {scanPaths.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {scanPaths.map((p, index) => (
+                <div key={index} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+                  <code className="flex-1 truncate text-xs text-foreground">{p}</code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 flex-shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => handleRemove(index)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 flex gap-2">
+            <input
+              type="text"
+              value={newPath}
+              onChange={(e) => setNewPath(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('appearanceSettings.projectScanPaths.placeholder', '/Users/username/Documents/git')}
+              className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-3"
+              onClick={handleAdd}
+              disabled={!newPath.trim()}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              {t('appearanceSettings.projectScanPaths.add', 'Add')}
+            </Button>
+          </div>
+        </div>
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
 
 export default function AppearanceSettingsTab({
   projectSortOrder,
@@ -66,6 +184,8 @@ export default function AppearanceSettingsTab({
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
+
+      <ProjectScanPathsSection />
 
       <SettingsSection title={t('appearanceSettings.codeEditor.title')}>
         <SettingsCard divided>

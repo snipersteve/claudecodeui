@@ -316,6 +316,7 @@ export function useChatSessionState({
       setIsLoading(false);
       setCurrentSessionId(null);
       sessionStorage.removeItem('cursorSessionId');
+      sessionStorage.removeItem('pendingSessionId');
       messagesOffsetRef.current = 0;
       setHasMoreMessages(false);
       setTotalMessages(0);
@@ -550,7 +551,7 @@ export function useChatSessionState({
 
     const fetchInitialTokenUsage = async () => {
       try {
-        const url = `/api/projects/${selectedProject.name}/sessions/${selectedSession.id}/token-usage`;
+        const url = `/api/projects/${selectedProject.name}/sessions/${selectedSession.id}/token-usage?model=${encodeURIComponent(localStorage.getItem('claude-model') || '')}`;
         const response = await authenticatedFetch(url);
         if (response.ok) {
           setTokenBudget(await response.json());

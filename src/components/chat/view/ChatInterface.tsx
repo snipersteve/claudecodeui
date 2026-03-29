@@ -10,6 +10,8 @@ import { useChatComposerState } from '../hooks/useChatComposerState';
 import { useSessionStore } from '../../../stores/useSessionStore';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
+import ChatInputControls from './subcomponents/ChatInputControls';
+import ClaudeStatus from './subcomponents/ClaudeStatus';
 
 
 type PendingViewSession = {
@@ -49,6 +51,9 @@ function ChatInterface({
   const streamTimerRef = useRef<number | null>(null);
   const accumulatedStreamRef = useRef('');
   const pendingViewSessionRef = useRef<PendingViewSession | null>(null);
+  // Tracks whether a user-initiated command is in-flight.
+  // Prevents stale check-session-status responses from resetting isLoading.
+  const commandPendingRef = useRef(false);
 
   const resetStreamingState = useCallback(() => {
     if (streamTimerRef.current) {
@@ -200,10 +205,11 @@ function ChatInterface({
     setClaudeStatus,
     setIsUserScrolledUp,
     setPendingPermissionRequests,
+    commandPendingRef,
   });
 
   // On WebSocket reconnect, re-fetch the current session's messages from the server
-  // so missed streaming events are shown. Also reset isLoading.
+  // so missed streaming events are shown. Also reset isLoading unless a command is pending.
   const handleWebSocketReconnect = useCallback(async () => {
     if (!selectedProject || !selectedSession) return;
     const providerVal = (localStorage.getItem('selected-provider') as SessionProvider) || 'claude';
@@ -212,8 +218,11 @@ function ChatInterface({
       projectName: selectedProject.name,
       projectPath: selectedProject.fullPath || selectedProject.path || '',
     });
-    setIsLoading(false);
-    setCanAbortSession(false);
+    // Don't reset loading if a user command is still in-flight
+    if (!commandPendingRef.current) {
+      setIsLoading(false);
+      setCanAbortSession(false);
+    }
   }, [selectedProject, selectedSession, sessionStore, setIsLoading, setCanAbortSession]);
 
   useChatRealtimeHandlers({
@@ -239,6 +248,7 @@ function ChatInterface({
     onNavigateToSession,
     onWebSocketReconnect: handleWebSocketReconnect,
     sessionStore,
+    commandPendingRef,
   });
 
   useEffect(() => {
@@ -294,6 +304,34 @@ function ChatInterface({
   return (
     <>
       <div className="flex h-full flex-col">
+        <div className="flex-shrink-0 px-4 pt-2">
+          <div className="mx-auto max-w-4xl">
+            {isLoading && !pendingPermissionRequests.some(r => r.toolName === 'AskUserQuestion') ? (
+              <ClaudeStatus
+                status={claudeStatus}
+                isLoading={isLoading}
+                onAbort={handleAbortSession}
+                provider={provider}
+              />
+            ) : (
+              <ChatInputControls
+                permissionMode={permissionMode}
+                onModeSwitch={cyclePermissionMode}
+                provider={provider}
+                thinkingMode={thinkingMode}
+                setThinkingMode={setThinkingMode}
+                tokenBudget={tokenBudget}
+                slashCommandsCount={slashCommandsCount}
+                onToggleCommandMenu={handleToggleCommandMenu}
+                hasInput={Boolean(input.trim())}
+                onClearInput={handleClearInput}
+                isUserScrolledUp={isUserScrolledUp}
+                hasMessages={chatMessages.length > 0}
+                onScrollToBottom={scrollToBottomAndReset}
+              />
+            )}
+          </div>
+        </div>
         <ChatMessagesPane
           scrollContainerRef={scrollContainerRef}
           onWheel={handleScroll}
@@ -338,6 +376,7 @@ function ChatInterface({
           showThinking={showThinking}
           selectedProject={selectedProject}
           isLoading={isLoading}
+          permissionMode={permissionMode}
         />
 
         <ChatComposer

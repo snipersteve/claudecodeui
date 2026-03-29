@@ -109,11 +109,11 @@ export default function ClaudeStatus({
       : t('claudeStatus.elapsed.startingNow', { defaultValue: 'Starting now' });
 
   return (
-    <div className="animate-in slide-in-from-bottom mb-2 w-full duration-300">
-      <div className="relative mx-auto max-w-4xl overflow-hidden rounded-xl border border-border/70 bg-card/90 shadow-sm backdrop-blur-md">
+    <div className="animate-in slide-in-from-bottom w-full duration-300">
+      <div className="relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-sm">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-sky-500/10 dark:from-primary/20 dark:to-sky-400/20" />
 
-        <div className="relative flex items-center justify-between gap-2 px-3 py-1.5">
+        <div className="relative flex items-center justify-between gap-2 px-4 py-3 sm:py-4">
           {/* Left: indicator + status text + elapsed */}
           <div className="flex min-w-0 items-center gap-2" role="status" aria-live="polite">
             <div className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10">
@@ -131,7 +131,7 @@ export default function ClaudeStatus({
               {isLoading && <span aria-hidden="true" className="text-primary">{animatedDots}</span>}
             </span>
 
-            <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
+            <span className="shrink-0 text-[11px] text-muted-foreground">
               {elapsedLabel}
             </span>
           </div>
@@ -141,13 +141,13 @@ export default function ClaudeStatus({
             <button
               type="button"
               onClick={onAbort}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-destructive px-2.5 py-1 text-xs font-semibold text-destructive-foreground shadow-sm ring-1 ring-destructive/40 transition-opacity hover:opacity-90 active:opacity-80"
+              className="flex shrink-0 items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-semibold text-destructive-foreground shadow-sm ring-1 ring-destructive/40 transition-opacity hover:opacity-90 active:opacity-80 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-xs"
             >
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-2.5 w-2.5 sm:h-3 sm:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
               <span>{t('claudeStatus.controls.stopGeneration', { defaultValue: 'Stop' })}</span>
-              <span className="rounded bg-black/20 px-1 py-0.5 text-[9px] uppercase tracking-wide">Esc</span>
+              <span className="hidden rounded bg-black/20 px-1 py-0.5 text-[9px] uppercase tracking-wide sm:inline">Esc</span>
             </button>
           )}
         </div>

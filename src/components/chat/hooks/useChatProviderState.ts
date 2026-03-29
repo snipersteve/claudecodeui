@@ -34,8 +34,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
       return;
     }
 
-    const savedMode = localStorage.getItem(`permissionMode-${selectedSession.id}`);
-    setPermissionMode((savedMode as PermissionMode) || 'bypassPermissions');
+    setPermissionMode('bypassPermissions');
   }, [selectedSession?.id]);
 
   useEffect(() => {

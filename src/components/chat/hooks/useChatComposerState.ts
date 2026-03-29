@@ -6,6 +6,7 @@ import type {
   FormEvent,
   KeyboardEvent,
   MouseEvent,
+  MutableRefObject,
   SetStateAction,
   TouchEvent,
 } from 'react';
@@ -60,6 +61,7 @@ interface UseChatComposerStateArgs {
   setClaudeStatus: (status: { text: string; tokens: number; can_interrupt: boolean } | null) => void;
   setIsUserScrolledUp: (isScrolledUp: boolean) => void;
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
+  commandPendingRef: MutableRefObject<boolean>;
 }
 
 interface MentionableFile {
@@ -132,6 +134,7 @@ export function useChatComposerState({
   setClaudeStatus,
   setIsUserScrolledUp,
   setPendingPermissionRequests,
+  commandPendingRef,
 }: UseChatComposerStateArgs) {
   const [input, setInput] = useState(() => {
     if (typeof window !== 'undefined' && selectedProject) {
@@ -156,83 +159,19 @@ export function useChatComposerState({
     (result: CommandExecutionResult) => {
       const { action, data } = result;
       switch (action) {
-        case 'clear':
-          clearMessages();
-          break;
-
-        case 'help':
+        case 'restart':
           addMessage({
             type: 'assistant',
-            content: data.content,
+            content: data.message || 'Restarting service...',
             timestamp: Date.now(),
           });
-          break;
-
-        case 'model':
-          addMessage({
-            type: 'assistant',
-            content: `**Current Model**: ${data.current.model}\n\n**Available Models**:\n\nClaude: ${data.available.claude.join(', ')}\n\nCursor: ${data.available.cursor.join(', ')}`,
-            timestamp: Date.now(),
-          });
-          break;
-
-        case 'cost': {
-          const costMessage = `**Token Usage**: ${data.tokenUsage.used.toLocaleString()} / ${data.tokenUsage.total.toLocaleString()} (${data.tokenUsage.percentage}%)\n\n**Estimated Cost**:\n- Input: $${data.cost.input}\n- Output: $${data.cost.output}\n- **Total**: $${data.cost.total}\n\n**Model**: ${data.model}`;
-          addMessage({ type: 'assistant', content: costMessage, timestamp: Date.now() });
-          break;
-        }
-
-        case 'status': {
-          const statusMessage = `**System Status**\n\n- Version: ${data.version}\n- Uptime: ${data.uptime}\n- Model: ${data.model}\n- Provider: ${data.provider}\n- Node.js: ${data.nodeVersion}\n- Platform: ${data.platform}`;
-          addMessage({ type: 'assistant', content: statusMessage, timestamp: Date.now() });
-          break;
-        }
-
-        case 'memory':
-          if (data.error) {
-            addMessage({
-              type: 'assistant',
-              content: `Warning: ${data.message}`,
-              timestamp: Date.now(),
-            });
-          } else {
-            addMessage({
-              type: 'assistant',
-              content: `${data.message}\n\nPath: \`${data.path}\``,
-              timestamp: Date.now(),
-            });
-            if (data.exists && onFileOpen) {
-              onFileOpen(data.path);
-            }
-          }
-          break;
-
-        case 'config':
-          onShowSettings?.();
-          break;
-
-        case 'rewind':
-          if (data.error) {
-            addMessage({
-              type: 'assistant',
-              content: `Warning: ${data.message}`,
-              timestamp: Date.now(),
-            });
-          } else {
-            rewindMessages(data.steps * 2);
-            addMessage({
-              type: 'assistant',
-              content: `Rewound ${data.steps} step(s). ${data.message}`,
-              timestamp: Date.now(),
-            });
-          }
           break;
 
         default:
           console.warn('Unknown built-in command action:', action);
       }
     },
-    [onFileOpen, onShowSettings, addMessage, clearMessages, rewindMessages],
+    [addMessage],
   );
 
   const handleCustomCommand = useCallback(async (result: CommandExecutionResult) => {
@@ -539,6 +478,7 @@ export function useChatComposerState({
       };
 
       addMessage(userMessage);
+      commandPendingRef.current = true;
       setIsLoading(true); // Processing banner starts
       setCanAbortSession(true);
       setClaudeStatus({
@@ -779,12 +719,6 @@ export function useChatComposerState({
       }
 
       if (handleFileMentionsKeyDown(event)) {
-        return;
-      }
-
-      if (event.key === 'Tab' && !showFileDropdown && !showCommandMenu) {
-        event.preventDefault();
-        cyclePermissionMode();
         return;
       }
 

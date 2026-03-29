@@ -65,30 +65,71 @@ function UsageBar({ pct, label, reset }: { pct: number; label: string; reset: st
   );
 }
 
+const STORAGE_KEY = 'rate-limit-usage';
+
+function loadCachedUsage(): UsageData | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as UsageData;
+  } catch (_) {
+    // ignore
+  }
+  return null;
+}
+
+function saveCachedUsage(data: UsageData) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (_) {
+    // ignore
+  }
+}
+
 export default function RateLimitBadge() {
-  const [data, setData] = useState<UsageData | null>(null);
+  const [data, setData] = useState<UsageData | null>(loadCachedUsage);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const failCountRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout>;
 
     async function fetchUsage() {
       try {
         const res = await api.claudeUsage();
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn('[RateLimitBadge] API returned', res.status, await res.text().catch(() => ''));
+          failCountRef.current++;
+          scheduleNext();
+          return;
+        }
         const json = (await res.json()) as UsageData;
-        if (!cancelled) setData(json);
-      } catch (_) {
-        // silently ignore — not all users have OAuth tokens
+        if (!cancelled) {
+          setData(json);
+          saveCachedUsage(json);
+          failCountRef.current = 0;
+        }
+      } catch (err) {
+        console.warn('[RateLimitBadge] Fetch error:', err);
+        failCountRef.current++;
       }
+      scheduleNext();
+    }
+
+    function scheduleNext() {
+      if (cancelled) return;
+      // Normal polling: 5 min. On failure: 30s, 60s, then cap at 60s
+      const delay = failCountRef.current === 0
+        ? 300_000
+        : Math.min(60_000, 30_000 * failCountRef.current);
+      timerId = setTimeout(fetchUsage, delay);
     }
 
     void fetchUsage();
-    const id = setInterval(fetchUsage, 300_000);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(timerId);
     };
   }, []);
 

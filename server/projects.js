@@ -216,6 +216,19 @@ async function loadProjectConfig() {
   }
 }
 
+// Get project scan paths from config
+async function getProjectScanPaths() {
+  const config = await loadProjectConfig();
+  return Array.isArray(config._projectScanPaths) ? config._projectScanPaths : [];
+}
+
+// Save project scan paths to config
+async function saveProjectScanPaths(paths) {
+  const config = await loadProjectConfig();
+  config._projectScanPaths = Array.isArray(paths) ? paths : [];
+  await saveProjectConfig(config);
+}
+
 // Save project configuration file
 async function saveProjectConfig(config) {
   const claudeDir = path.join(os.homedir(), '.claude');
@@ -384,6 +397,7 @@ async function extractProjectDirectory(projectName) {
 async function getProjects(progressCallback = null) {
   const claudeDir = path.join(os.homedir(), '.claude', 'projects');
   const config = await loadProjectConfig();
+  const scanPaths = Array.isArray(config._projectScanPaths) ? config._projectScanPaths : [];
   const projects = [];
   const existingProjects = new Set();
   const codexSessionsIndexRef = { sessionsByProject: null };
@@ -424,6 +438,14 @@ async function getProjects(progressCallback = null) {
 
       // Extract actual project directory from JSONL sessions
       const actualProjectDir = await extractProjectDirectory(entry.name);
+
+      // Filter by scan paths if configured
+      if (scanPaths.length > 0 && actualProjectDir) {
+        const matchesScanPath = scanPaths.some(sp => actualProjectDir.startsWith(sp));
+        if (!matchesScanPath) {
+          continue;
+        }
+      }
 
       // Get display name from config or generate one
       const customName = config[entry.name]?.displayName;
@@ -528,6 +550,8 @@ async function getProjects(progressCallback = null) {
 
   // Add manually configured projects that don't exist as folders yet
   for (const [projectName, projectConfig] of Object.entries(config)) {
+    // Skip special config keys
+    if (projectName.startsWith('_')) continue;
     if (!existingProjects.has(projectName) && projectConfig.manuallyAdded) {
       processedProjects++;
 
@@ -550,6 +574,14 @@ async function getProjects(progressCallback = null) {
         } catch (error) {
           // Fall back to decoded project name
           actualProjectDir = projectName.replace(/-/g, '/');
+        }
+      }
+
+      // Filter by scan paths if configured
+      if (scanPaths.length > 0 && actualProjectDir) {
+        const matchesScanPath = scanPaths.some(sp => actualProjectDir.startsWith(sp));
+        if (!matchesScanPath) {
+          continue;
         }
       }
 
@@ -800,6 +832,7 @@ async function parseJsonlSessions(filePath) {
                 messageCount: 0,
                 lastActivity: new Date(),
                 cwd: entry.cwd || '',
+                firstUserMessage: null,
                 lastUserMessage: null,
                 lastAssistantMessage: null
               });
@@ -842,6 +875,9 @@ async function parseJsonlSessions(filePath) {
               );
 
               if (typeof textContent === 'string' && textContent.length > 0 && !isSystemMessage) {
+                if (!session.firstUserMessage) {
+                  session.firstUserMessage = textContent;
+                }
                 session.lastUserMessage = textContent;
               }
             } else if (entry.message?.role === 'assistant' && entry.message?.content) {
@@ -887,13 +923,13 @@ async function parseJsonlSessions(filePath) {
       }
     }
 
-    // After processing all entries, set final summary based on last message if no summary exists
+    // After processing all entries, set final summary based on first user message if no summary exists
     for (const session of sessions.values()) {
       if (session.summary === 'New Session') {
-        // Prefer last user message, fall back to last assistant message
-        const lastMessage = session.lastUserMessage || session.lastAssistantMessage;
-        if (lastMessage) {
-          session.summary = lastMessage.length > 50 ? lastMessage.substring(0, 50) + '...' : lastMessage;
+        // Prefer first user message (use as session title), fall back to last assistant message
+        const titleMessage = session.firstUserMessage || session.lastAssistantMessage;
+        if (titleMessage) {
+          session.summary = titleMessage.length > 50 ? titleMessage.substring(0, 50) + '...' : titleMessage;
         }
       }
     }
@@ -2557,5 +2593,7 @@ export {
   deleteCodexSession,
   getGeminiCliSessions,
   getGeminiCliSessionMessages,
-  searchConversations
+  searchConversations,
+  getProjectScanPaths,
+  saveProjectScanPaths
 };
