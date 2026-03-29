@@ -923,13 +923,16 @@ async function parseJsonlSessions(filePath) {
       }
     }
 
-    // After processing all entries, set final summary based on first user message if no summary exists
+    // After processing all entries, always prefer first user message as session title
     for (const session of sessions.values()) {
-      if (session.summary === 'New Session') {
-        // Prefer first user message (use as session title), fall back to last assistant message
-        const titleMessage = session.firstUserMessage || session.lastAssistantMessage;
-        if (titleMessage) {
-          session.summary = titleMessage.length > 50 ? titleMessage.substring(0, 50) + '...' : titleMessage;
+      if (session.firstUserMessage) {
+        const msg = session.firstUserMessage;
+        session.summary = msg.length > 50 ? msg.substring(0, 50) + '...' : msg;
+      } else if (session.summary === 'New Session') {
+        // Fall back to last assistant message if no user message exists
+        const fallback = session.lastAssistantMessage;
+        if (fallback) {
+          session.summary = fallback.length > 50 ? fallback.substring(0, 50) + '...' : fallback;
         }
       }
     }
