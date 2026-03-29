@@ -804,7 +804,6 @@ async function getSessions(projectName, limit = 5, offset = 0) {
 async function parseJsonlSessions(filePath) {
   const sessions = new Map();
   const entries = [];
-  const pendingSummaries = new Map(); // leafUuid -> summary for entries without sessionId
 
   try {
     const fileStream = fsSync.createReadStream(filePath);
@@ -818,11 +817,6 @@ async function parseJsonlSessions(filePath) {
         try {
           const entry = JSON.parse(line);
           entries.push(entry);
-
-          // Handle summary entries that don't have sessionId yet
-          if (entry.type === 'summary' && entry.summary && !entry.sessionId && entry.leafUuid) {
-            pendingSummaries.set(entry.leafUuid, entry.summary);
-          }
 
           if (entry.sessionId) {
             if (!sessions.has(entry.sessionId)) {
@@ -839,16 +833,6 @@ async function parseJsonlSessions(filePath) {
             }
 
             const session = sessions.get(entry.sessionId);
-
-            // Apply pending summary if this entry has a parentUuid that matches a pending summary
-            if (session.summary === 'New Session' && entry.parentUuid && pendingSummaries.has(entry.parentUuid)) {
-              session.summary = pendingSummaries.get(entry.parentUuid);
-            }
-
-            // Update summary from summary entries with sessionId
-            if (entry.type === 'summary' && entry.summary) {
-              session.summary = entry.summary;
-            }
 
             // Track last user and assistant messages (skip system messages)
             if (entry.message?.role === 'user' && entry.message?.content) {
